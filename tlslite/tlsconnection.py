@@ -712,21 +712,27 @@ class TLSConnection(TLSRecordLayer):
                                 srpParams, certParams, anonParams,
                                 serverName, nextProtos, reqTack, alpn):
         # Initialize acceptable ciphersuites
-        cipherSuites = [CipherSuite.TLS_EMPTY_RENEGOTIATION_INFO_SCSV]
-        if srpParams:
-            cipherSuites += CipherSuite.getSrpAllSuites(settings)
-        elif certParams:
-            cipherSuites += CipherSuite.getTLS13Suites(settings)
-            cipherSuites += CipherSuite.getEcdsaSuites(settings)
-            cipherSuites += CipherSuite.getEcdheCertSuites(settings)
-            cipherSuites += CipherSuite.getDheCertSuites(settings)
-            cipherSuites += CipherSuite.getCertSuites(settings)
-            cipherSuites += CipherSuite.getDheDsaSuites(settings)
-        elif anonParams:
-            cipherSuites += CipherSuite.getEcdhAnonSuites(settings)
-            cipherSuites += CipherSuite.getAnonSuites(settings)
+        # Check if exact cipher order is specified (for JA3 fingerprint control)
+        if hasattr(settings, 'cipher_order') and settings.cipher_order is not None:
+            # Use exact cipher order specified by httpx-tls for precise JA3 control
+            cipherSuites = list(settings.cipher_order)
         else:
-            assert False
+            # Default behavior: add renegotiation info and standard cipher suites
+            cipherSuites = [CipherSuite.TLS_EMPTY_RENEGOTIATION_INFO_SCSV]
+            if srpParams:
+                cipherSuites += CipherSuite.getSrpAllSuites(settings)
+            elif certParams:
+                cipherSuites += CipherSuite.getTLS13Suites(settings)
+                cipherSuites += CipherSuite.getEcdsaSuites(settings)
+                cipherSuites += CipherSuite.getEcdheCertSuites(settings)
+                cipherSuites += CipherSuite.getDheCertSuites(settings)
+                cipherSuites += CipherSuite.getCertSuites(settings)
+                cipherSuites += CipherSuite.getDheDsaSuites(settings)
+            elif anonParams:
+                cipherSuites += CipherSuite.getEcdhAnonSuites(settings)
+                cipherSuites += CipherSuite.getAnonSuites(settings)
+            else:
+                assert False
 
         # Add any SCSVs. These are not real cipher suites, but signaling
         # values which reuse the cipher suite field in the ClientHello.

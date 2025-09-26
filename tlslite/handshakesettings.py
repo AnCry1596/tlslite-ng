@@ -478,7 +478,7 @@ class HandshakeSettings(object):
         self.dc_sig_algs = []
         self.dc_valid_time = DC_VALID_TIME
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         """Initialise default values for settings."""
         self._init_key_settings()
         self._init_misc_extensions()
@@ -489,6 +489,11 @@ class HandshakeSettings(object):
         self.macNames = list(MAC_NAMES)
         self.keyExchangeNames = list(KEY_EXCHANGE_NAMES)
         self.cipherImplementations = list(CIPHER_IMPLEMENTATIONS)
+
+        # Custom attributes for exact JA3 control (added for httpx-tls compatibility)
+        self.cipher_order = kwargs.get("cipher_order", None)
+        self.extension_order = kwargs.get("extension_order", None)
+        self.groups_order = kwargs.get("groups_order", None)
 
     @staticmethod
     def _sanityCheckKeySizes(other):
@@ -868,6 +873,11 @@ class HandshakeSettings(object):
 
         other.pskConfigs = self.pskConfigs
         other.psk_modes = self.psk_modes
+
+        # Copy custom JA3 control attributes (added for httpx-tls compatibility)
+        other.cipher_order = getattr(self, 'cipher_order', None)
+        other.extension_order = getattr(self, 'extension_order', None)
+        other.groups_order = getattr(self, 'groups_order', None)
 
         if not other.certificateTypes:
             raise ValueError("No supported certificate types")
