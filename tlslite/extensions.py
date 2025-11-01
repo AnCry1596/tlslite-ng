@@ -2463,6 +2463,229 @@ class TruncatedHMACExtension(TLSExtension):
         return "TruncatedHMACExtension()"
 
 
+class UseSRTPExtension(TLSExtension):
+    """Handles use_srtp extension from RFC 5764 for DTLS-SRTP."""
+
+    def __init__(self):
+        super(UseSRTPExtension, self).__init__(
+            extType=ExtensionType.use_srtp)
+        self.protection_profiles = []
+        self.mki = bytearray(0)
+
+    def create(self, protection_profiles=None, mki=None):
+        self.protection_profiles = protection_profiles if protection_profiles else []
+        self.mki = mki if mki else bytearray(0)
+        return self
+
+    @property
+    def extData(self):
+        writer = Writer()
+        profile_writer = Writer()
+        for profile in self.protection_profiles:
+            profile_writer.add(profile, 2)
+        writer.add(len(profile_writer.bytes), 2)
+        writer.bytes += profile_writer.bytes
+        writer.add(len(self.mki), 1)
+        writer.bytes += self.mki
+        return writer.bytes
+
+    def parse(self, parser):
+        if parser.getRemainingLength() == 0:
+            return self
+        profiles_len = parser.get(2)
+        self.protection_profiles = []
+        for _ in range(profiles_len // 2):
+            self.protection_profiles.append(parser.get(2))
+        mki_len = parser.get(1)
+        self.mki = parser.getFixBytes(mki_len) if mki_len > 0 else bytearray(0)
+        return self
+
+    def __repr__(self):
+        return "UseSRTPExtension(protection_profiles={0!r}, mki={1!r})".format(
+            self.protection_profiles, self.mki)
+
+
+class TokenBindingExtension(TLSExtension):
+    """Handles token_binding extension from RFC 8472."""
+
+    def __init__(self):
+        super(TokenBindingExtension, self).__init__(
+            extType=ExtensionType.token_binding)
+        self.key_parameters = []
+
+    def create(self, key_parameters=None):
+        self.key_parameters = key_parameters if key_parameters else []
+        return self
+
+    @property
+    def extData(self):
+        if not self.key_parameters:
+            return bytearray(0)
+        writer = Writer()
+        writer.add(len(self.key_parameters), 1)
+        for param in self.key_parameters:
+            writer.add(param, 1)
+        return writer.bytes
+
+    def parse(self, parser):
+        if parser.getRemainingLength() == 0:
+            self.key_parameters = []
+            return self
+        param_len = parser.get(1)
+        self.key_parameters = []
+        for _ in range(param_len):
+            self.key_parameters.append(parser.get(1))
+        return self
+
+    def __repr__(self):
+        return "TokenBindingExtension(key_parameters={0!r})".format(
+            self.key_parameters)
+
+
+class ClientCertificateTypeExtension(TLSExtension):
+    """Handles client_certificate_type extension from RFC 7250."""
+
+    def __init__(self):
+        super(ClientCertificateTypeExtension, self).__init__(
+            extType=ExtensionType.client_certificate_type)
+        self.certificate_types = []
+
+    def create(self, certificate_types=None):
+        self.certificate_types = certificate_types if certificate_types else []
+        return self
+
+    @property
+    def extData(self):
+        if not self.certificate_types:
+            return bytearray(0)
+        writer = Writer()
+        writer.add(len(self.certificate_types), 1)
+        for cert_type in self.certificate_types:
+            writer.add(cert_type, 1)
+        return writer.bytes
+
+    def parse(self, parser):
+        if parser.getRemainingLength() == 0:
+            self.certificate_types = []
+            return self
+        types_len = parser.get(1)
+        self.certificate_types = []
+        for _ in range(types_len):
+            self.certificate_types.append(parser.get(1))
+        return self
+
+    def __repr__(self):
+        return "ClientCertificateTypeExtension(certificate_types={0!r})".format(
+            self.certificate_types)
+
+
+class ServerCertificateTypeExtension(TLSExtension):
+    """Handles server_certificate_type extension from RFC 7250."""
+
+    def __init__(self):
+        super(ServerCertificateTypeExtension, self).__init__(
+            extType=ExtensionType.server_certificate_type)
+        self.certificate_types = []
+
+    def create(self, certificate_types=None):
+        self.certificate_types = certificate_types if certificate_types else []
+        return self
+
+    @property
+    def extData(self):
+        if not self.certificate_types:
+            return bytearray(0)
+        writer = Writer()
+        writer.add(len(self.certificate_types), 1)
+        for cert_type in self.certificate_types:
+            writer.add(cert_type, 1)
+        return writer.bytes
+
+    def parse(self, parser):
+        if parser.getRemainingLength() == 0:
+            self.certificate_types = []
+            return self
+        types_len = parser.get(1)
+        self.certificate_types = []
+        for _ in range(types_len):
+            self.certificate_types.append(parser.get(1))
+        return self
+
+    def __repr__(self):
+        return "ServerCertificateTypeExtension(certificate_types={0!r})".format(
+            self.certificate_types)
+
+
+class CachedInfoExtension(TLSExtension):
+    """Handles cached_info extension from RFC 7924."""
+
+    def __init__(self):
+        super(CachedInfoExtension, self).__init__(
+            extType=ExtensionType.cached_info)
+        self.cached_info = []
+
+    def create(self, cached_info=None):
+        self.cached_info = cached_info if cached_info else []
+        return self
+
+    @property
+    def extData(self):
+        if not self.cached_info:
+            return bytearray(0)
+        writer = Writer()
+        list_writer = Writer()
+        for info_type, hash_value in self.cached_info:
+            list_writer.add(info_type, 1)
+            list_writer.add(len(hash_value), 1)
+            list_writer.bytes += hash_value
+        writer.add(len(list_writer.bytes), 1)
+        writer.bytes += list_writer.bytes
+        return writer.bytes
+
+    def parse(self, parser):
+        if parser.getRemainingLength() == 0:
+            self.cached_info = []
+            return self
+        info_len = parser.get(1)
+        p = Parser(parser.getFixBytes(info_len))
+        self.cached_info = []
+        while p.getRemainingLength() > 0:
+            info_type = p.get(1)
+            hash_len = p.get(1)
+            hash_value = p.getFixBytes(hash_len)
+            self.cached_info.append((info_type, hash_value))
+        return self
+
+    def __repr__(self):
+        return "CachedInfoExtension(cached_info={0!r})".format(
+            self.cached_info)
+
+
+class TransparencyInfoExtension(TLSExtension):
+    """Handles transparency_info extension from RFC 9162."""
+
+    def __init__(self):
+        super(TransparencyInfoExtension, self).__init__(
+            extType=ExtensionType.transparency_info)
+        self.transparency_info = bytearray(0)
+
+    def create(self, transparency_info=None):
+        self.transparency_info = transparency_info if transparency_info else bytearray(0)
+        return self
+
+    @property
+    def extData(self):
+        return self.transparency_info
+
+    def parse(self, parser):
+        self.transparency_info = parser.getFixBytes(parser.getRemainingLength())
+        return self
+
+    def __repr__(self):
+        return "TransparencyInfoExtension(transparency_info={0!r})".format(
+            self.transparency_info)
+
+
 TLSExtension._universalExtensions = {
     ExtensionType.server_name: SNIExtension,
     ExtensionType.status_request: StatusRequestExtension,
@@ -2472,11 +2695,16 @@ TLSExtension._universalExtensions = {
     ExtensionType.ec_point_formats: ECPointFormatsExtension,
     ExtensionType.srp: SRPExtension,
     ExtensionType.signature_algorithms: SignatureAlgorithmsExtension,
+    ExtensionType.use_srtp: UseSRTPExtension,
     ExtensionType.alpn: ALPNExtension,
     ExtensionType.status_request_v2: StatusRequestV2Extension,
     ExtensionType.signed_certificate_timestamp: SignedCertificateTimestampExtension,
+    ExtensionType.client_certificate_type: ClientCertificateTypeExtension,
+    ExtensionType.server_certificate_type: ServerCertificateTypeExtension,
     ExtensionType.encrypt_then_mac: EncryptThenMACExtension,
     ExtensionType.extended_master_secret: ExtendedMasterSecretExtension,
+    ExtensionType.token_binding: TokenBindingExtension,
+    ExtensionType.cached_info: CachedInfoExtension,
     ExtensionType.supports_npn: NPNExtension,
     ExtensionType.client_hello_padding: PaddingExtension,
     ExtensionType.renegotiation_info: RenegotiationInfoExtension,
@@ -2491,6 +2719,7 @@ TLSExtension._universalExtensions = {
     ExtensionType.oid_filters: OIDFiltersExtension,
     ExtensionType.post_handshake_auth: PostHandshakeAuthExtension,
     ExtensionType.record_size_limit: RecordSizeLimitExtension,
+    ExtensionType.transparency_info: TransparencyInfoExtension,
     ExtensionType.session_ticket: SessionTicketExtension,
     ExtensionType.compress_certificate: CompressedCertificateExtension,
     ExtensionType.delegated_credential: DelegatedCredentialExtension
