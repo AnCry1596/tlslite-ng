@@ -884,6 +884,18 @@ class TLSConnection(TLSRecordLayer):
             extensions.append(CompressedCertificateExtension().create(
                 algos_numbers))
 
+        # Sort extensions according to extension_order if specified (for JA3 fingerprinting)
+        if hasattr(settings, 'extension_order') and settings.extension_order:
+            # Create a dict mapping extension type to extension object
+            ext_dict = {ext.extType: ext for ext in extensions}
+
+            # Reorder based on extension_order, keeping only extensions that already exist
+            # We only reorder existing extensions to avoid sending unsupported ones
+            extensions = [ext_dict[ext_type] for ext_type in settings.extension_order if ext_type in ext_dict]
+            # Add any extensions not in extension_order at the end (to not lose any)
+            ordered_types = set(settings.extension_order)
+            extensions.extend([ext for ext in ext_dict.values() if ext.extType not in ordered_types])
+
         # don't send empty list of extensions or extensions in SSLv3
         if not extensions or settings.maxVersion == (3, 0):
             extensions = None
