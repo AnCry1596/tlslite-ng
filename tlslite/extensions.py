@@ -93,7 +93,7 @@ class TLSExtension(object):
     # actual definition at the end of file, after definitions of all classes
     _universalExtensions = {}
     _serverExtensions = {}
-    # _encryptedExtensions = {}
+    _encryptedExtensions = {}
     _certificateExtensions = {}
     _hrrExtensions = {}
 
@@ -230,7 +230,7 @@ class TLSExtension(object):
 
             for handler_t, handlers in (
                     (self.cert, self._certificateExtensions),
-                    # (self.encExtType, self._encryptedExtensions),
+                    (self.encExtType, self._encryptedExtensions),
                     (self.serverType, self._serverExtensions),
                     (self.hrr, self._hrrExtensions),
                     (True, self._universalExtensions)):
@@ -2220,26 +2220,276 @@ class CompressedCertificateExtension(VarListExtension):
             CertificateCompressionAlgorithm)
 
 
+class StatusRequestV2Extension(TLSExtension):
+    """Handles status_request_v2 extension from RFC 6961."""
+
+    def __init__(self):
+        super(StatusRequestV2Extension, self).__init__(
+            extType=ExtensionType.status_request_v2)
+        self.status_request = bytearray(0)
+
+    def create(self, status_request=None):
+        if status_request is None:
+            self.status_request = bytearray(0)
+        else:
+            self.status_request = status_request
+        return self
+
+    @property
+    def extData(self):
+        return self.status_request
+
+    def parse(self, parser):
+        self.status_request = parser.getFixBytes(parser.getRemainingLength())
+        return self
+
+    def __repr__(self):
+        return "StatusRequestV2Extension(status_request={0!r})".format(
+            self.status_request)
+
+
+class SignedCertificateTimestampExtension(TLSExtension):
+    """Handles signed_certificate_timestamp extension from RFC 6962."""
+
+    def __init__(self):
+        super(SignedCertificateTimestampExtension, self).__init__(
+            extType=ExtensionType.signed_certificate_timestamp)
+        self.sct_data = bytearray(0)
+
+    def create(self, sct_data=None):
+        if sct_data is None:
+            self.sct_data = bytearray(0)
+        else:
+            self.sct_data = sct_data
+        return self
+
+    @property
+    def extData(self):
+        return self.sct_data
+
+    def parse(self, parser):
+        self.sct_data = parser.getFixBytes(parser.getRemainingLength())
+        return self
+
+    def __repr__(self):
+        return "SignedCertificateTimestampExtension(sct_data={0!r})".format(
+            self.sct_data)
+
+
+class EncryptThenMACExtension(TLSExtension):
+    """Handles encrypt_then_mac extension from RFC 7366."""
+
+    def __init__(self):
+        super(EncryptThenMACExtension, self).__init__(
+            extType=ExtensionType.encrypt_then_mac)
+
+    def create(self):
+        return self
+
+    @property
+    def extData(self):
+        return bytearray(0)
+
+    def parse(self, parser):
+        if parser.getRemainingLength() != 0:
+            raise DecodeError("Non-empty encrypt_then_mac extension")
+        return self
+
+    def __repr__(self):
+        return "EncryptThenMACExtension()"
+
+
+class ExtendedMasterSecretExtension(TLSExtension):
+    """Handles extended_master_secret extension from RFC 7627."""
+
+    def __init__(self):
+        super(ExtendedMasterSecretExtension, self).__init__(
+            extType=ExtensionType.extended_master_secret)
+
+    def create(self):
+        return self
+
+    @property
+    def extData(self):
+        return bytearray(0)
+
+    def parse(self, parser):
+        if parser.getRemainingLength() != 0:
+            raise DecodeError("Non-empty extended_master_secret extension")
+        return self
+
+    def __repr__(self):
+        return "ExtendedMasterSecretExtension()"
+
+
+class CertificateAuthoritiesExtension(TLSExtension):
+    """Handles certificate_authorities extension from RFC 8446."""
+
+    def __init__(self):
+        super(CertificateAuthoritiesExtension, self).__init__(
+            extType=ExtensionType.certificate_authorities)
+        self.certificate_authorities = None
+
+    def create(self, certificate_authorities=None):
+        self.certificate_authorities = certificate_authorities
+        return self
+
+    @property
+    def extData(self):
+        if self.certificate_authorities is None:
+            return bytearray(0)
+
+        writer = Writer()
+        list_writer = Writer()
+        for cert_auth in self.certificate_authorities:
+            list_writer.add(len(cert_auth), 2)
+            list_writer.bytes += cert_auth
+
+        writer.add(len(list_writer.bytes), 2)
+        writer.bytes += list_writer.bytes
+        return writer.bytes
+
+    def parse(self, parser):
+        if parser.getRemainingLength() == 0:
+            self.certificate_authorities = None
+            return self
+
+        p = Parser(parser.getFixBytes(parser.get(2)))
+        self.certificate_authorities = []
+        while p.getRemainingLength() > 0:
+            cert_auth = p.getVarBytes(2)
+            self.certificate_authorities.append(cert_auth)
+
+        return self
+
+    def __repr__(self):
+        return "CertificateAuthoritiesExtension(certificate_authorities={0!r})".format(
+            self.certificate_authorities)
+
+
+class OIDFiltersExtension(TLSExtension):
+    """Handles oid_filters extension from RFC 8446."""
+
+    def __init__(self):
+        super(OIDFiltersExtension, self).__init__(
+            extType=ExtensionType.oid_filters)
+        self.filters = []
+
+    def create(self, filters=None):
+        if filters is None:
+            self.filters = []
+        else:
+            self.filters = filters
+        return self
+
+    @property
+    def extData(self):
+        if not self.filters:
+            return bytearray(0)
+
+        writer = Writer()
+        list_writer = Writer()
+        for cert_ext_oid, cert_ext_values in self.filters:
+            list_writer.add(len(cert_ext_oid), 1)
+            list_writer.bytes += cert_ext_oid
+            list_writer.add(len(cert_ext_values), 2)
+            list_writer.bytes += cert_ext_values
+
+        writer.add(len(list_writer.bytes), 2)
+        writer.bytes += list_writer.bytes
+        return writer.bytes
+
+    def parse(self, parser):
+        if parser.getRemainingLength() == 0:
+            self.filters = []
+            return self
+
+        p = Parser(parser.getFixBytes(parser.get(2)))
+        self.filters = []
+        while p.getRemainingLength() > 0:
+            cert_ext_oid = p.getVarBytes(1)
+            cert_ext_values = p.getVarBytes(2)
+            self.filters.append((cert_ext_oid, cert_ext_values))
+
+        return self
+
+    def __repr__(self):
+        return "OIDFiltersExtension(filters={0!r})".format(self.filters)
+
+
+class PostHandshakeAuthExtension(TLSExtension):
+    """Handles post_handshake_auth extension from TLS 1.3."""
+
+    def __init__(self):
+        super(PostHandshakeAuthExtension, self).__init__(
+            extType=ExtensionType.post_handshake_auth)
+
+    def create(self):
+        return self
+
+    @property
+    def extData(self):
+        return bytearray(0)
+
+    def parse(self, parser):
+        if parser.getRemainingLength() != 0:
+            raise DecodeError("Non-empty post_handshake_auth extension")
+        return self
+
+    def __repr__(self):
+        return "PostHandshakeAuthExtension()"
+
+
+class TruncatedHMACExtension(TLSExtension):
+    """Handles truncated_hmac extension from RFC 6066."""
+
+    def __init__(self):
+        super(TruncatedHMACExtension, self).__init__(
+            extType=ExtensionType.truncated_hmac)
+
+    def create(self):
+        return self
+
+    @property
+    def extData(self):
+        return bytearray(0)
+
+    def parse(self, parser):
+        if parser.getRemainingLength() != 0:
+            raise DecodeError("Non-empty truncated_hmac extension")
+        return self
+
+    def __repr__(self):
+        return "TruncatedHMACExtension()"
+
+
 TLSExtension._universalExtensions = {
     ExtensionType.server_name: SNIExtension,
     ExtensionType.status_request: StatusRequestExtension,
+    ExtensionType.truncated_hmac: TruncatedHMACExtension,
     ExtensionType.cert_type: ClientCertTypeExtension,
     ExtensionType.supported_groups: SupportedGroupsExtension,
     ExtensionType.ec_point_formats: ECPointFormatsExtension,
     ExtensionType.srp: SRPExtension,
     ExtensionType.signature_algorithms: SignatureAlgorithmsExtension,
     ExtensionType.alpn: ALPNExtension,
+    ExtensionType.status_request_v2: StatusRequestV2Extension,
+    ExtensionType.signed_certificate_timestamp: SignedCertificateTimestampExtension,
+    ExtensionType.encrypt_then_mac: EncryptThenMACExtension,
+    ExtensionType.extended_master_secret: ExtendedMasterSecretExtension,
     ExtensionType.supports_npn: NPNExtension,
     ExtensionType.client_hello_padding: PaddingExtension,
     ExtensionType.renegotiation_info: RenegotiationInfoExtension,
     ExtensionType.heartbeat: HeartbeatExtension,
     ExtensionType.supported_versions: SupportedVersionsExtension,
     ExtensionType.key_share: ClientKeyShareExtension,
-    ExtensionType.signature_algorithms_cert:
-        SignatureAlgorithmsCertExtension,
+    ExtensionType.signature_algorithms_cert: SignatureAlgorithmsCertExtension,
     ExtensionType.pre_shared_key: PreSharedKeyExtension,
     ExtensionType.psk_key_exchange_modes: PskKeyExchangeModesExtension,
     ExtensionType.cookie: CookieExtension,
+    ExtensionType.certificate_authorities: CertificateAuthoritiesExtension,
+    ExtensionType.oid_filters: OIDFiltersExtension,
+    ExtensionType.post_handshake_auth: PostHandshakeAuthExtension,
     ExtensionType.record_size_limit: RecordSizeLimitExtension,
     ExtensionType.session_ticket: SessionTicketExtension,
     ExtensionType.compress_certificate: CompressedCertificateExtension,
@@ -2254,13 +2504,19 @@ TLSExtension._serverExtensions = {
     ExtensionType.pre_shared_key: SrvPreSharedKeyExtension
 }
 
+TLSExtension._encryptedExtensions = {
+    # Extensions with special EncryptedExtensions-specific parsers only
+    # Most extensions can reuse their ClientHello parsers via _universalExtensions
+}
+
 TLSExtension._certificateExtensions = {
     ExtensionType.status_request: CertificateStatusExtension,
+    ExtensionType.signed_certificate_timestamp: SignedCertificateTimestampExtension,
     ExtensionType.delegated_credential: DelegatedCredentialCertExtension
-
 }
 
 TLSExtension._hrrExtensions = {
-    ExtensionType.key_share: HRRKeyShareExtension,
-    ExtensionType.supported_versions: SrvSupportedVersionsExtension
+    ExtensionType.cookie: CookieExtension,
+    ExtensionType.supported_versions: SrvSupportedVersionsExtension,
+    ExtensionType.key_share: HRRKeyShareExtension
 }
